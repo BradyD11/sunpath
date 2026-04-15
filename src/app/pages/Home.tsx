@@ -8,7 +8,7 @@ export default function HomePage() {
   const stats = [
     { value: "12+", label: "Real Programs Available", icon: Sun },
     { value: "$600/yr", label: "Potential Savings Per Home", icon: DollarSign },
-    { value: "Free", label: "No Upfront Costs", icon: Lightbulb },
+    { value: "Free", label: "Many Programs Have No Upfront Costs", icon: Lightbulb },
   ];
 
   const programs = [
