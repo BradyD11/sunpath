@@ -17,6 +17,9 @@ interface EligibilityResult {
   eligible: boolean;
   programs: string[];
   message: string;
+  reasons: string[];
+  nextSteps: string[];
+  watchlist: string[];
 }
 
 export default function Eligibility() {
@@ -54,6 +57,15 @@ export default function Eligibility() {
       ],
     },
     {
+      id: "assistanceEnrollment",
+      question: "Does anyone in your household receive programs like SNAP, AHCCCS, SSI, or TANF?",
+      options: [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+        { value: "not-sure", label: "Not sure" },
+      ],
+    },
+    {
       id: "income",
       question: "What is your approximate annual household income?",
       options: [
@@ -71,6 +83,36 @@ export default function Eligibility() {
         { value: "yes", label: "Yes, I pay utilities" },
         { value: "included", label: "Utilities are included in rent" },
         { value: "other", label: "Other arrangement" },
+      ],
+    },
+    {
+      id: "provider",
+      question: "Who is your primary electric or gas utility provider?",
+      options: [
+        { value: "aps", label: "APS" },
+        { value: "srp", label: "SRP" },
+        { value: "tep", label: "TEP" },
+        { value: "swgas", label: "Southwest Gas" },
+        { value: "other", label: "Another provider / cooperative" },
+        { value: "not-sure", label: "Not sure" },
+      ],
+    },
+    {
+      id: "arrears",
+      question: "Are you currently behind on utility payments or worried about disconnection?",
+      options: [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+        { value: "not-sure", label: "Not sure" },
+      ],
+    },
+    {
+      id: "medical",
+      question: "Does anyone in your household have a health condition made worse by heat or power outages?",
+      options: [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+        { value: "prefer-not", label: "Prefer not to say" },
       ],
     },
   ];
@@ -95,7 +137,9 @@ export default function Eligibility() {
 
   const calculateEligibility = () => {
     let eligiblePrograms: string[] = [];
-    let eligible = true;
+    const reasons: string[] = [];
+    const nextSteps: string[] = [];
+    const watchlist: string[] = [];
 
     // Check residency
     if (answers.residency !== "yes") {
@@ -103,46 +147,111 @@ export default function Eligibility() {
         eligible: false,
         programs: [],
         message: "Unfortunately, these programs are only available to Arizona residents. Please check with programs in your state.",
+        reasons: ["Most listed programs require Arizona residency."],
+        nextSteps: ["Find your state LIHEAP office through your state human services website."],
+        watchlist: [],
       });
       return;
     }
 
-    // Determine eligible programs based on answers
+    // Determine likely eligibility based on household profile
     const isLowIncome = ["under25k", "25k-40k"].includes(answers.income);
     const isModerateIncome = ["40k-60k", "60k-80k"].includes(answers.income);
     const isHomeowner = answers.housing === "own";
     const isRenter = answers.housing === "rent";
+    const paysUtilities = answers.utilities === "yes";
+    const utilitiesIncluded = answers.utilities === "included";
+    const receivesAssistance = answers.assistanceEnrollment === "yes";
+    const highShutoffRisk = answers.arrears === "yes";
+    const hasMedicalNeed = answers.medical === "yes";
+
+    if (isLowIncome) {
+      reasons.push("Your income range aligns with programs designed for lower-income households.");
+    } else if (isModerateIncome) {
+      reasons.push("Your income range may qualify for moderate-income utility discount programs.");
+    } else {
+      reasons.push("Income-restricted programs may be limited, but resource and efficiency programs can still help.");
+    }
+
+    if (receivesAssistance) {
+      reasons.push("Participation in other assistance programs may simplify income verification for utility aid.");
+    }
+
+    if (paysUtilities) {
+      reasons.push("You report paying utility bills directly, which is required for most bill-credit programs.");
+    }
+
+    if (highShutoffRisk) {
+      reasons.push("You indicated possible disconnection risk, so emergency assistance should be prioritized.");
+      nextSteps.push("Contact your utility provider immediately to request a payment arrangement and disconnection protections.");
+    }
+
+    if (hasMedicalNeed) {
+      reasons.push("Household health risk during extreme heat may support priority handling with some providers.");
+      nextSteps.push("Ask your utility about medical-need documentation and heat-season protection options.");
+    }
 
     if (isLowIncome) {
       eligiblePrograms.push("LIHEAP + Power AZ");
       eligiblePrograms.push("Arizona Weatherization Assistance Program (ADOH WAP)");
-      eligiblePrograms.push("APS Energy Support Program");
-      
-      if (answers.utilities === "yes") {
+      if (paysUtilities) {
+        reasons.push("Lower-income households that pay utilities are often prioritized for bill relief and weatherization.");
+      }
+    }
+
+    if (isLowIncome || isModerateIncome || receivesAssistance) {
+      eligiblePrograms.push("LIHEAP + Power AZ");
+      if (!isLowIncome) {
+        reasons.push("Moderate-income households may still qualify through expanded state thresholds in some areas.");
+      }
+    }
+
+    if (answers.provider === "aps") {
+      if ((isLowIncome || isModerateIncome || receivesAssistance) && paysUtilities) {
+        eligiblePrograms.push("APS Energy Support Program");
+      }
+      if (highShutoffRisk && paysUtilities) {
+        eligiblePrograms.push("APS Project SHARE");
+      }
+      if (isHomeowner && (isLowIncome || isModerateIncome) && paysUtilities) {
         eligiblePrograms.push("APS Solar Communities");
       }
     }
 
-    if (isLowIncome || isModerateIncome) {
-      eligiblePrograms.push("Solar for All Arizonans (Currently Paused)");
-    }
-
-    if (isHomeowner) {
-      if (isLowIncome || isModerateIncome) {
-        eligiblePrograms.push("Solar for All Arizonans (Currently Paused)");
-      }
-    }
-
-    if (isRenter) {
+    if (answers.provider === "srp" && (isLowIncome || isModerateIncome || receivesAssistance) && paysUtilities) {
       eligiblePrograms.push("SRP Income-Qualified Discount");
-      eligiblePrograms.push("Solar for All Arizonans (Currently Paused)");
     }
 
-    // Add bill assistance programs based on utility provider
+    if (answers.provider === "tep" && (isLowIncome || isModerateIncome || receivesAssistance) && paysUtilities) {
+      eligiblePrograms.push("TEP Lifeline");
+    }
+
+    if (answers.provider === "swgas" && (isLowIncome || isModerateIncome || receivesAssistance) && paysUtilities) {
+      eligiblePrograms.push("Southwest Gas LIRA Program");
+    }
+
+    if (isRenter || isLowIncome || isModerateIncome) {
+      eligiblePrograms.push("2-1-1 Arizona");
+    }
+
+    if (utilitiesIncluded) {
+      reasons.push("Since utilities are included in rent, direct bill-credit programs may be less accessible.");
+      nextSteps.push("Ask your landlord/property manager about weatherization upgrades and community solar options.");
+    }
+
     if (isLowIncome || isModerateIncome) {
-      if (answers.utilities === "yes") {
-        eligiblePrograms.push("APS Project SHARE");
-      }
+      watchlist.push("Solar for All Arizonans (Currently Paused)");
+      reasons.push("You match the target profile for low/moderate-income solar pathways when this program resumes.");
+    }
+
+    if (!eligiblePrograms.length || answers.provider === "other" || answers.provider === "not-sure") {
+      eligiblePrograms.push("AZ Clean Energy Hub");
+      nextSteps.push("Use AZ Clean Energy Hub to confirm programs available for your exact utility territory.");
+    }
+
+    if (!nextSteps.length) {
+      nextSteps.push("Prepare your latest utility bill and proof of income before applying to speed up review.");
+      nextSteps.push("Start with one bill-assistance program and one efficiency program for faster savings.");
     }
 
     // Deduplicate programs
@@ -153,12 +262,18 @@ export default function Eligibility() {
         eligible: false,
         programs: [],
         message: "Based on your answers, you may not qualify for income-restricted programs, but you can still explore market-rate energy efficiency programs and solar options.",
+        reasons,
+        nextSteps,
+        watchlist,
       });
     } else {
       setResult({
         eligible: true,
         programs: eligiblePrograms,
         message: `Great news! Based on your answers, you may qualify for ${eligiblePrograms.length} program${eligiblePrograms.length > 1 ? 's' : ''}.`,
+        reasons,
+        nextSteps,
+        watchlist,
       });
     }
   };
@@ -202,6 +317,45 @@ export default function Eligibility() {
                       <li key={index} className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg border border-amber-100">
                         <CheckCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
                         <span className="text-gray-900 font-medium">{program}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {result.reasons.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="font-bold text-lg text-gray-900 mb-4">Why These Matches Appear:</h3>
+                  <ul className="space-y-2">
+                    {result.reasons.map((reason, index) => (
+                      <li key={index} className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-gray-800 text-sm">
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {result.nextSteps.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="font-bold text-lg text-gray-900 mb-4">Recommended Next Steps:</h3>
+                  <ul className="space-y-2">
+                    {result.nextSteps.map((stepItem, index) => (
+                      <li key={index} className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-gray-800 text-sm">
+                        {stepItem}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {result.watchlist.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="font-bold text-lg text-gray-900 mb-4">Watchlist:</h3>
+                  <ul className="space-y-2">
+                    {result.watchlist.map((program, index) => (
+                      <li key={index} className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-gray-800 text-sm">
+                        {program}
                       </li>
                     ))}
                   </ul>
