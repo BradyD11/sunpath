@@ -405,7 +405,6 @@ export default function Eligibility() {
             <div className="mb-4">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-xs font-semibold text-gray-500 uppercase">Question {step + 1} of {questions.length}</span>
-                <span className="text-xs font-semibold text-amber-600">{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-1.5" />
             </div>
